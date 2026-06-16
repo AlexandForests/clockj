@@ -1,98 +1,90 @@
 <script>
-  // Curated SVG schematic — hand-placed geometry for the Hewes St / Broadway corner.
-  // Virtual canvas: 400 × 500
-  //
-  // Geography summary:
-  //   The J/M elevated line runs roughly NE→SW along Broadway (the El).
-  //   Hewes St station is on this line (~mid-canvas).
-  //   The G runs underground N→S. Broadway (G) station is ~1 block south of Hewes.
-  //   The two lines form a loose cross in this neighborhood.
+  const W = 500, H = 600;
 
-  const W = 400, H = 500;
+  // J/M corridor centerline anchors
+  const JM_SW   = { x: 45,  y: 530 };
+  const HEWES_C = { x: 210, y: 290 };
+  const JM_NE   = { x: 460, y: 65  };
 
-  // Station anchor points
-  const HEWES  = { x: 200, y: 210 };
-  const BWAY_G = { x: 240, y: 310 };
+  // Perpendicular offset so J and M run side-by-side
+  const JM_LEN = Math.hypot(JM_NE.x - JM_SW.x, JM_NE.y - JM_SW.y);
+  const JM_UX  = (JM_NE.x - JM_SW.x) / JM_LEN;
+  const JM_UY  = (JM_NE.y - JM_SW.y) / JM_LEN;
+  const PX = -JM_UY; // perpendicular unit (CCW 90°)
+  const PY =  JM_UX;
+  const OFF = 9;
 
-  // J/M line runs diagonally NE↗ to SW↙ through Hewes
-  const JM_LINE = [
-    { x:  60, y: 360 }, // SW end (Jamaica direction)
-    HEWES,              // Hewes St station
-    { x: 360, y:  80 }, // NE end (Manhattan direction)
+  const JO = { dx: -PX * OFF, dy: -PY * OFF }; // J: NW side of corridor
+  const MO = { dx:  PX * OFF, dy:  PY * OFF }; // M: SE side of corridor
+
+  function sh(pt, o) { return { x: pt.x + o.dx, y: pt.y + o.dy }; }
+
+  // J ribbon anchor points
+  const J_SW = sh(JM_SW,   JO);
+  const J_H  = sh(HEWES_C, JO);
+  const J_NE = sh(JM_NE,   JO);
+
+  // M ribbon anchor points
+  const M_SW = sh(JM_SW,   MO);
+  const M_H  = sh(HEWES_C, MO);
+  const M_NE = sh(JM_NE,   MO);
+
+  // G corridor (vertical)
+  const G_N  = { x: 290, y: 15  };
+  const BWAY = { x: 290, y: 390 };
+  const G_S  = { x: 290, y: 585 };
+
+  // Hewes label anchor (midpoint between J and M ribbons)
+  const HEWES_MID = { x: (J_H.x + M_H.x) / 2, y: (J_H.y + M_H.y) / 2 };
+
+  // City blocks — dark rectangles suggesting the Williamsburg block grid.
+  // Placed to avoid overlapping the main corridor paths.
+  const BLOCKS = [
+    // NW quadrant (above J/M diagonal, left of G)
+    { x: 15,  y: 15,  w: 155, h: 70  },
+    { x: 15,  y: 105, w: 125, h: 80  },
+    { x: 15,  y: 205, w: 85,  h: 65  },
+    { x: 115, y: 185, w: 80,  h: 55  },
+    // NE quadrant (above J/M, right of G)
+    { x: 315, y: 15,  w: 165, h: 70  },
+    { x: 340, y: 105, w: 140, h: 50  },
+    // SW quadrant (below J/M, left of G)
+    { x: 15,  y: 440, w: 150, h: 80  },
+    { x: 15,  y: 540, w: 120, h: 42  },
+    // SE quadrant (below J/M, right of G)
+    { x: 315, y: 245, w: 165, h: 75  },
+    { x: 315, y: 440, w: 165, h: 80  },
+    { x: 315, y: 540, w: 165, h: 42  },
   ];
 
-  // G line runs vertically through Broadway station
-  const G_LINE = [
-    { x: 240, y:  50 }, // N end (Court Sq direction)
-    BWAY_G,             // Broadway station
-    { x: 240, y: 460 }, // S end (Church Av direction)
-  ];
-
-  /** Build SVG polyline points string from array of {x,y} */
   function pts(arr) {
-    return arr.map(p => `${p.x},${p.y}`).join(' ');
+    return arr.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   }
-
-  // Street grid — faint reference lines for context
-  const STREETS = [
-    // Broadway (diagonal)
-    { x1: 50, y1: 380, x2: 370, y2: 60, label: 'Broadway', lx: 90, ly: 350 },
-    // Hewes St (horizontal cross-street at Hewes station)
-    { x1: 60, y1: 210, x2: 340, y2: 210, label: 'Hewes St', lx: 64, ly: 204 },
-    // Marcy Ave (vertical reference)
-    { x1: 155, y1: 50, x2: 155, y2: 460, label: 'Marcy Ave', lx: 158, ly: 58 },
-  ];
 </script>
 
 <div class="map-wrap">
-  <svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Neighborhood schematic map showing Hewes St and Broadway subway stations">
+  <svg viewBox="0 0 {W} {H}" role="img" aria-label="Neighborhood schematic map — Hewes St and Broadway stations">
 
-    <!-- Street grid -->
-    {#each STREETS as s}
-      <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-            stroke="rgba(255,255,255,0.07)" stroke-width="1" />
-      <text x={s.lx} y={s.ly} class="street-label">{s.label}</text>
+    <!-- City block grid -->
+    {#each BLOCKS as b}
+      <rect x={b.x} y={b.y} width={b.w} height={b.h} rx="4" fill="#181818"/>
     {/each}
 
-    <!-- J/M line (diagonal brown/orange El) -->
-    <polyline points={pts(JM_LINE)}
-      fill="none" stroke="#996633" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-    <!-- M overlay (offset slightly so both colors show) -->
-    <polyline points={pts([JM_LINE[0], HEWES])}
-      fill="none" stroke="#996633" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
+    <!-- G ribbon (draw first so J/M cross on top) -->
+    <polyline points={pts([G_N, BWAY, G_S])}
+      fill="none" stroke="#6CBE45" stroke-width="14"
+      stroke-linecap="round" stroke-linejoin="round"/>
 
-    <!-- G line (vertical green underground) -->
-    <polyline points={pts(G_LINE)}
-      fill="none" stroke="#6CBE45" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- J ribbon -->
+    <polyline points={pts([J_SW, J_H, J_NE])}
+      fill="none" stroke="#996633" stroke-width="14"
+      stroke-linecap="round" stroke-linejoin="round"/>
 
-    <!-- Direction labels -->
-    <!-- J/M NE end → Manhattan -->
-    <text x="348" y="74" class="dir-label" text-anchor="end">Manhattan ↗</text>
-    <!-- J/M SW end → Jamaica / Metropolitan Av -->
-    <text x="52" y="372" class="dir-label" text-anchor="start">Jamaica ↙</text>
-    <!-- G N end → Court Sq -->
-    <text x="240" y="42" class="dir-label" text-anchor="middle">Court Sq ↑</text>
-    <!-- G S end → Church Av -->
-    <text x="240" y="478" class="dir-label" text-anchor="middle">↓ Church Av</text>
+    <!-- M ribbon -->
+    <polyline points={pts([M_SW, M_H, M_NE])}
+      fill="none" stroke="#FF6319" stroke-width="14"
+      stroke-linecap="round" stroke-linejoin="round"/>
 
-    <!-- Hewes St station marker -->
-    <circle cx={HEWES.x} cy={HEWES.y} r="10" fill="#0a0a0a" stroke="#996633" stroke-width="3" />
-    <circle cx={HEWES.x} cy={HEWES.y} r="4" fill="#996633" />
-
-    <!-- Hewes St label -->
-    <text x={HEWES.x - 14} y={HEWES.y - 18} class="station-label" text-anchor="middle">Hewes St</text>
-    <text x={HEWES.x - 14} y={HEWES.y - 5} class="line-tag" text-anchor="middle">J M</text>
-
-    <!-- Broadway (G) station marker -->
-    <circle cx={BWAY_G.x} cy={BWAY_G.y} r="10" fill="#0a0a0a" stroke="#6CBE45" stroke-width="3" />
-    <circle cx={BWAY_G.x} cy={BWAY_G.y} r="4" fill="#6CBE45" />
-
-    <!-- Broadway label -->
-    <text x={BWAY_G.x + 18} y={BWAY_G.y - 6} class="station-label" text-anchor="start">Broadway</text>
-    <text x={BWAY_G.x + 18} y={BWAY_G.y + 8} class="line-tag" text-anchor="start">G</text>
-
-    <!-- "YOU ARE HERE" compass rose -->
-    <text x="20" y="490" class="compass">↑ N</text>
   </svg>
 </div>
 
@@ -103,51 +95,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    padding: 16px;
   }
-
   svg {
     width: 100%;
     height: 100%;
     max-width: 100%;
     max-height: 100%;
-  }
-
-  .street-label {
-    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
-    font-size: 9px;
-    fill: rgba(255, 255, 255, 0.18);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .dir-label {
-    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
-    font-size: 10px;
-    fill: rgba(255, 255, 255, 0.3);
-    letter-spacing: 0.05em;
-  }
-
-  .station-label {
-    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    fill: rgba(255, 255, 255, 0.88);
-    letter-spacing: 0.04em;
-  }
-
-  .line-tag {
-    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
-    font-size: 10px;
-    font-weight: 600;
-    fill: rgba(255, 255, 255, 0.45);
-    letter-spacing: 0.12em;
-  }
-
-  .compass {
-    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
-    font-size: 10px;
-    fill: rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.08em;
   }
 </style>
