@@ -13,8 +13,10 @@
   let raw = $state({});
   let fetchedAt = $state(0); // ms since epoch when raw was last fetched
 
-  /** Live minutes derived from raw + elapsed time since fetch */
+  /** Live minutes derived from raw + elapsed time since fetch.
+   *  tick is read here so $derived recomputes every second. */
   const platforms = $derived.by(() => {
+    void tick; // reactive dependency — recomputes every second
     if (!fetchedAt) return {};
     const elapsedMin = (Date.now() - fetchedAt) / 60_000;
     /** @type {typeof raw} */
@@ -63,8 +65,6 @@
   }
 </script>
 
-<!-- tick dependency so $derived re-evaluates every second -->
-{#key tick}
 <div class="clocks">
   {#each Object.values(STATIONS) as station}
     <section class="station">
@@ -94,7 +94,6 @@
     </section>
   {/each}
 </div>
-{/key}
 
 <style>
   .clocks {

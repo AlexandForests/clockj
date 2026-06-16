@@ -5,9 +5,11 @@
 
   let freshnessAt = $state(0); // ms when data was last fetched successfully
 
-  // Freshness: amber when data is >60s old
-  const isStale   = $derived(freshnessAt > 0 && Date.now() - freshnessAt > 60_000);
+  // Freshness: amber when data is >60s old.
+  // tick read here so these recompute every second without {#key} DOM remounts.
+  const isStale   = $derived(tick >= 0 && freshnessAt > 0 && Date.now() - freshnessAt > 60_000);
   const hasData   = $derived(freshnessAt > 0);
+  const staleSecs = $derived(tick >= 0 ? Math.round((Date.now() - freshnessAt) / 1000) : 0);
 
   // Clock string for header
   let clockStr = $state('');
@@ -66,8 +68,6 @@
   <title>clockj — Hewes &amp; Broadway</title>
 </svelte:head>
 
-<!-- tick referenced so $derived re-evaluates -->
-{#key tick}
 <div
   class="shell"
   class:dim={isDim}
@@ -99,10 +99,9 @@
   </main>
 
   {#if isStale && hasData}
-    <div class="stale-banner">Data may be delayed — last updated {Math.round((Date.now() - freshnessAt) / 1000)}s ago</div>
+    <div class="stale-banner">Data may be delayed — last updated {staleSecs}s ago</div>
   {/if}
 </div>
-{/key}
 
 <style>
   .shell {
