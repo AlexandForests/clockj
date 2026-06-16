@@ -85,6 +85,48 @@
       fill="none" stroke="#FF6319" stroke-width="14"
       stroke-linecap="round" stroke-linejoin="round"/>
 
+    <!-- Hewes St station pill (spans both J and M ribbons) -->
+    <rect
+      x={HEWES_MID.x - 66} y={HEWES_MID.y - 44}
+      width="132" height="30" rx="6"
+      fill="rgba(12,12,12,0.95)" stroke="rgba(255,255,255,0.14)" stroke-width="1"
+    />
+    <circle cx={HEWES_MID.x - 46} cy={HEWES_MID.y - 29} r="8" fill="#996633"/>
+    <text x={HEWES_MID.x - 46} y={HEWES_MID.y - 25} class="bullet-text">J</text>
+    <text x={HEWES_MID.x - 28} y={HEWES_MID.y - 24} class="station-name">HEWES ST</text>
+    <circle cx={HEWES_MID.x + 58} cy={HEWES_MID.y - 29} r="8" fill="#FF6319"/>
+    <text x={HEWES_MID.x + 58} y={HEWES_MID.y - 25} class="bullet-text">M</text>
+
+    <!-- Broadway station pill -->
+    <rect
+      x={BWAY.x - 58} y={BWAY.y - 44}
+      width="116" height="30" rx="6"
+      fill="rgba(12,12,12,0.95)" stroke="rgba(255,255,255,0.14)" stroke-width="1"
+    />
+    <circle cx={BWAY.x - 38} cy={BWAY.y - 29} r="8" fill="#6CBE45"/>
+    <text x={BWAY.x - 38} y={BWAY.y - 25} class="bullet-text">G</text>
+    <text x={BWAY.x - 20} y={BWAY.y - 24} class="station-name">BROADWAY</text>
+
+    <!-- J/M terminus labels -->
+    <circle cx="14" cy="510" r="5" fill="#996633"/>
+    <text x="24" y="514" class="terminus-label">JAMAICA</text>
+
+    <circle cx="14" cy="550" r="5" fill="#FF6319"/>
+    <text x="24" y="554" class="terminus-label">MET AVE</text>
+
+    <circle cx="486" cy="56" r="5" fill="#996633"/>
+    <text x="476" y="51" class="terminus-label" text-anchor="end">BROAD ST</text>
+
+    <circle cx="486" cy="70" r="5" fill="#FF6319"/>
+    <text x="476" y="65" class="terminus-label" text-anchor="end">FOREST HILLS</text>
+
+    <!-- G terminus labels -->
+    <circle cx="290" cy="26" r="5" fill="#6CBE45"/>
+    <text x="300" y="30" class="terminus-label">COURT SQ</text>
+
+    <circle cx="290" cy="574" r="5" fill="#6CBE45"/>
+    <text x="300" y="578" class="terminus-label">CHURCH AV</text>
+
   </svg>
 </div>
 
@@ -102,5 +144,29 @@
     height: 100%;
     max-width: 100%;
     max-height: 100%;
+  }
+  .bullet-text {
+    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
+    font-size: 9px;
+    font-weight: 800;
+    fill: #fff;
+    text-anchor: middle;
+    dominant-baseline: middle;
+  }
+  .station-name {
+    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    fill: rgba(255, 255, 255, 0.85);
+    letter-spacing: 0.08em;
+    dominant-baseline: middle;
+  }
+  .terminus-label {
+    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
+    font-size: 8px;
+    font-weight: 600;
+    fill: rgba(255, 255, 255, 0.35);
+    letter-spacing: 0.08em;
+    dominant-baseline: middle;
   }
 </style>
