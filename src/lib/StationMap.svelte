@@ -1,4 +1,7 @@
 <script>
+  /** @type {Record<string, Array<{line: string, color: string, minutes: number}>>} */
+  let { trains = {}, fetchedAt = 0, tick = 0 } = $props();
+
   const W = 500, H = 600;
 
   // J/M corridor centerline anchors
@@ -60,6 +63,38 @@
   function pts(arr) {
     return arr.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   }
+
+  function lerp(a, b, t) {
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  }
+
+  const MAX_MIN = 25;
+
+  const liveDots = $derived.by(() => {
+    void tick;
+    if (!fetchedAt) return [];
+    const elapsedMin = (Date.now() - fetchedAt) / 60_000;
+    /** @type {Array<{x: number, y: number, color: string}>} */
+    const dots = [];
+
+    function addDots(arrivals, stationPt, terminusPt, color) {
+      for (const a of arrivals ?? []) {
+        const mins = a.minutes - elapsedMin;
+        if (mins < 0 || mins > MAX_MIN) continue;
+        const pos = lerp(stationPt, terminusPt, mins / MAX_MIN);
+        dots.push({ x: pos.x, y: pos.y, color });
+      }
+    }
+
+    addDots(trains.M14N?.filter(a => a.line === 'J'), J_H,  J_SW, '#996633');
+    addDots(trains.M14N?.filter(a => a.line === 'M'), M_H,  M_SW, '#FF6319');
+    addDots(trains.M14S?.filter(a => a.line === 'J'), J_H,  J_NE, '#996633');
+    addDots(trains.M14S?.filter(a => a.line === 'M'), M_H,  M_NE, '#FF6319');
+    addDots(trains.G30N?.filter(a => a.line === 'G'), BWAY, G_S,  '#6CBE45');
+    addDots(trains.G30S?.filter(a => a.line === 'G'), BWAY, G_N,  '#6CBE45');
+
+    return dots;
+  });
 </script>
 
 <div class="map-wrap">
@@ -84,6 +119,14 @@
     <polyline points={pts([M_SW, M_H, M_NE])}
       fill="none" stroke="#FF6319" stroke-width="14"
       stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Live train dots -->
+    {#each liveDots as dot}
+      <circle
+        cx={dot.x.toFixed(1)} cy={dot.y.toFixed(1)}
+        r="7" fill={dot.color} stroke="white" stroke-width="2"
+      />
+    {/each}
 
     <!-- Hewes St station pill (spans both J and M ribbons) -->
     <rect
