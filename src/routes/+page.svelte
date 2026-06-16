@@ -28,7 +28,7 @@
     // 1s clock + stale check + dim update
     const clockTick = setInterval(() => {
       const now = new Date();
-      clockStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      clockStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
       const h = now.getHours();
       isDim = h >= 23 || h < 6;
       tick++;
