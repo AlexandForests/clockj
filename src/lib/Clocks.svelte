@@ -1,63 +1,23 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
-  import { STATIONS, DESTINATIONS, LINES } from './stations.js';
+  import { STATIONS, DESTINATIONS } from './stations.js';
 
-  /** @type {(freshAt: number) => void} */
-  let { onFreshness } = $props();
+  /** @type {Record<string, Array<{line: string, color: string, minutes: number, destination: string}>>} */
+  let { trains = {}, fetchedAt = 0, tick = 0 } = $props();
 
-  /**
-   * Raw API response: stopId → [{line, color, minutes, destination}, ...]
-   * minutes here are the server-computed values at fetch time.
-   * @type {Record<string, Array<{line: string, color: string, minutes: number, destination: string}>>}
-   */
-  let raw = $state({});
-  let fetchedAt = $state(0); // ms since epoch when raw was last fetched
-
-  /** Live minutes derived from raw + elapsed time since fetch.
-   *  tick is read here so $derived recomputes every second. */
   const platforms = $derived.by(() => {
     void tick; // reactive dependency — recomputes every second
     if (!fetchedAt) return {};
     const elapsedMin = (Date.now() - fetchedAt) / 60_000;
-    /** @type {typeof raw} */
+    /** @type {typeof trains} */
     const out = {};
-    for (const [stopId, arrivals] of Object.entries(raw)) {
+    for (const [stopId, arrivals] of Object.entries(trains)) {
       out[stopId] = arrivals
         .map(a => ({ ...a, minutes: a.minutes - elapsedMin }))
-        .filter(a => a.minutes >= -0.5); // show 0 until train departs
+        .filter(a => a.minutes >= -0.5);
     }
     return out;
   });
 
-  let tick = $state(0); // incremented every second to force $derived recompute
-
-  async function fetchTrains() {
-    try {
-      const res = await fetch('/api/trains');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      raw = await res.json();
-      fetchedAt = Date.now();
-      onFreshness(fetchedAt);
-    } catch (e) {
-      console.error('[clockj] fetch trains failed:', e);
-      // keep stale data; onFreshness not called → parent sees age
-    }
-  }
-
-  let pollInterval = /** @type {ReturnType<typeof setInterval>|null} */ (null);
-  let tickInterval = /** @type {ReturnType<typeof setInterval>|null} */ (null);
-
-  onMount(() => {
-    fetchTrains();
-    pollInterval = setInterval(fetchTrains, 30_000);
-    tickInterval = setInterval(() => { tick++; }, 1_000);
-    return () => {
-      if (pollInterval) clearInterval(pollInterval);
-      if (tickInterval) clearInterval(tickInterval);
-    };
-  });
-
-  /** Format minutes to display string */
   function fmt(min) {
     if (min <= 0.5) return 'now';
     const m = Math.ceil(min);

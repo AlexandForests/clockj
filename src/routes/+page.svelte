@@ -3,29 +3,36 @@
   import StationMap from '$lib/StationMap.svelte';
   import Clocks from '$lib/Clocks.svelte';
 
-  let freshnessAt = $state(0); // ms when data was last fetched successfully
+  // Trains data — single source, shared by Clocks and StationMap
+  /** @type {Record<string, Array<{line: string, color: string, minutes: number, destination: string}>>} */
+  let trains     = $state({});
+  let freshnessAt = $state(0);
 
-  // Freshness: amber when data is >60s old.
-  // tick read here so these recompute every second without {#key} DOM remounts.
   const isStale   = $derived(tick >= 0 && freshnessAt > 0 && Date.now() - freshnessAt > 60_000);
   const hasData   = $derived(freshnessAt > 0);
   const staleSecs = $derived(tick >= 0 ? Math.round((Date.now() - freshnessAt) / 1000) : 0);
 
-  // Clock string for header
   let clockStr = $state('');
+  let shiftX   = $state(0);
+  let shiftY   = $state(0);
+  let isDim    = $state(false);
+  let tick     = $state(0);
 
-  // Pixel-shift: slow drift to prevent burn-in on static screens
-  let shiftX = $state(0);
-  let shiftY = $state(0);
-
-  // Overnight dim: dim between 23:00 and 06:00
-  let isDim = $state(false);
-
-  // Force stale re-derive every second
-  let tick = $state(0);
+  async function fetchTrains() {
+    try {
+      const res = await fetch('/api/trains');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      trains = await res.json();
+      freshnessAt = Date.now();
+    } catch (e) {
+      console.error('[clockj] fetch trains failed:', e);
+    }
+  }
 
   onMount(() => {
-    // 1s clock + stale check + dim update
+    fetchTrains();
+    const pollInterval = setInterval(fetchTrains, 30_000);
+
     const clockTick = setInterval(() => {
       const now = new Date();
       clockStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -34,28 +41,24 @@
       tick++;
     }, 1_000);
 
-    // Pixel-shift: drift ±4px over ~60s in a Lissajous pattern
     const shiftTick = setInterval(() => {
       const t = Date.now() / 1000;
       shiftX = Math.round(Math.sin(t / 17) * 4);
       shiftY = Math.round(Math.cos(t / 23) * 4);
     }, 5_000);
 
-    // Wake Lock
     let wakeLock = null;
     async function acquireWakeLock() {
       try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
-      } catch (_) { /* silently ignored on non-supporting browsers */ }
+        if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+      } catch (_) {}
     }
     acquireWakeLock();
-    // Re-acquire after page visibility change (Wake Lock releases on tab hide)
     const onVisible = () => { if (document.visibilityState === 'visible') acquireWakeLock(); };
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
+      clearInterval(pollInterval);
       clearInterval(clockTick);
       clearInterval(shiftTick);
       document.removeEventListener('visibilitychange', onVisible);
@@ -91,10 +94,10 @@
   <!-- Split layout: map left, clocks right -->
   <main>
     <div class="panel map-panel">
-      <StationMap />
+      <StationMap trains={trains} fetchedAt={freshnessAt} tick={tick} />
     </div>
     <div class="panel clock-panel">
-      <Clocks onFreshness={(t) => { freshnessAt = t; }} />
+      <Clocks trains={trains} fetchedAt={freshnessAt} tick={tick} />
     </div>
   </main>
 
