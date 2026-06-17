@@ -1,23 +1,39 @@
 <script>
-  import { STATIONS, DESTINATIONS } from './stations.js';
+  import { STATIONS } from './stations.js';
+  import { trainKey } from './train-key.js';
 
-  /** @type {Record<string, Array<{line: string, color: string, minutes: number, destination: string}>>} */
-  let { trains = {}, fetchedAt = 0, tick = 0 } = $props();
+  /**
+   * @typedef {{line: string, color: string, minutes: number, arrivalTime?: number, tripId?: string, destination: string}} TrainArrival
+   * @typedef {{trains?: Record<string, TrainArrival[]>, fetchedAt?: number, tick?: number, activeTrainId?: string | null, onTrainHover?: (id: string | null) => void}} ClocksProps
+   */
+
+  /** @type {ClocksProps} */
+  let {
+    trains = {},
+    fetchedAt = 0,
+    tick = 0,
+    activeTrainId = null,
+    onTrainHover = () => {},
+  } = $props();
 
   const platforms = $derived.by(() => {
     void tick; // reactive dependency — recomputes every second
     if (!fetchedAt) return {};
     const elapsedMin = (Date.now() - fetchedAt) / 60_000;
-    /** @type {typeof trains} */
+    /** @type {Record<string, TrainArrival[]>} */
     const out = {};
     for (const [stopId, arrivals] of Object.entries(trains)) {
       out[stopId] = arrivals
-        .map(a => ({ ...a, minutes: a.minutes - elapsedMin }))
+        .map(a => ({
+          ...a,
+          minutes: a.arrivalTime ? (a.arrivalTime - Date.now()) / 60_000 : a.minutes - elapsedMin,
+        }))
         .filter(a => a.minutes >= -0.5);
     }
     return out;
   });
 
+  /** @param {number} min */
   function fmt(min) {
     if (min <= 0.5) return 'now';
     const m = Math.ceil(min);
@@ -34,12 +50,23 @@
         <div class="platform">
           <div class="platform-dir">{platform.label}</div>
           <div class="rows">
-            {#each arrivals.slice(0, 3) as arrival}
-              <div class="row">
+            {#each arrivals.slice(0, 3) as arrival, i (trainKey(stopId, arrival, i))}
+              {@const id = trainKey(stopId, arrival, i)}
+              <button
+                type="button"
+                class="row"
+                class:active={id === activeTrainId}
+                data-train-id={id}
+                style={`--line-color: ${arrival.color}`}
+                onpointerenter={() => onTrainHover(id)}
+                onpointerleave={() => onTrainHover(null)}
+                onfocus={() => onTrainHover(id)}
+                onblur={() => onTrainHover(null)}
+              >
                 <span class="bullet" style="background:{arrival.color}">{arrival.line}</span>
                 <span class="dest">{arrival.destination}</span>
                 <span class="mins">{fmt(arrival.minutes)}<span class="min-label"> min</span></span>
-              </div>
+              </button>
             {/each}
             {#if arrivals.length === 0}
               <div class="row empty">
@@ -104,12 +131,32 @@
   }
 
   .row {
+    appearance: none;
+    border: 0;
     display: flex;
     align-items: center;
     gap: 12px;
+    width: 100%;
     padding: 8px 10px;
     background: rgba(255, 255, 255, 0.04);
+    border-left: 3px solid transparent;
     border-radius: 6px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    transition: background 0.16s ease, border-color 0.16s ease;
+  }
+
+  .row:hover,
+  .row:focus-visible,
+  .row.active {
+    background: rgba(255, 255, 255, 0.085);
+    border-left-color: var(--line-color);
+  }
+
+  .row:focus-visible {
+    outline: 1px solid rgba(255, 255, 255, 0.45);
+    outline-offset: 2px;
   }
 
   .row.empty {

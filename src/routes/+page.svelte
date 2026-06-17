@@ -1,24 +1,58 @@
 <script>
+  import { dev } from '$app/environment';
   import { onMount } from 'svelte';
   import StationMap from '$lib/StationMap.svelte';
   import Clocks from '$lib/Clocks.svelte';
 
+  /** @typedef {{line: string, color: string, minutes: number, arrivalTime?: number, tripId?: string, destination: string}} TrainArrival */
+
   // Trains data — single source, shared by Clocks and StationMap
-  /** @type {Record<string, Array<{line: string, color: string, minutes: number, destination: string}>>} */
+  /** @type {Record<string, TrainArrival[]>} */
   let trains     = $state({});
   let freshnessAt = $state(0);
+  let clockStr = $state('');
+  let shiftX   = $state(0);
+  let shiftY   = $state(0);
+  let tick     = $state(0);
+  let hoveredTrainId = $state(/** @type {string | null} */ (null));
 
   const isStale   = $derived(tick >= 0 && freshnessAt > 0 && Date.now() - freshnessAt > 60_000);
   const hasData   = $derived(freshnessAt > 0);
   const staleSecs = $derived(tick >= 0 ? Math.round((Date.now() - freshnessAt) / 1000) : 0);
 
-  let clockStr = $state('');
-  let shiftX   = $state(0);
-  let shiftY   = $state(0);
-  let isDim    = $state(false);
-  let tick     = $state(0);
+  /** @param {string | null} id */
+  function setHoveredTrain(id) {
+    hoveredTrainId = id;
+  }
+
+  function useHoverFixture() {
+    if (!dev || typeof window === 'undefined') return false;
+    if (new URLSearchParams(window.location.search).get('fixture') !== 'hover') return false;
+
+    const now = Date.now();
+    trains = {
+      M14N: [
+        { line: 'J', color: '#996633', minutes: 7, arrivalTime: now + 7 * 60_000, tripId: 'fixture-j-manhattan', destination: 'Broad St' },
+        { line: 'M', color: '#FF6319', minutes: 12, arrivalTime: now + 12 * 60_000, tripId: 'fixture-m-manhattan', destination: 'Forest Hills' },
+      ],
+      M14S: [
+        { line: 'J', color: '#996633', minutes: 5, arrivalTime: now + 5 * 60_000, tripId: 'fixture-j-outbound', destination: 'Jamaica Center' },
+        { line: 'M', color: '#FF6319', minutes: 10, arrivalTime: now + 10 * 60_000, tripId: 'fixture-m-outbound', destination: 'Metropolitan Av' },
+      ],
+      G30N: [
+        { line: 'G', color: '#6CBE45', minutes: 4, arrivalTime: now + 4 * 60_000, tripId: 'fixture-g-court', destination: 'Court Sq' },
+      ],
+      G30S: [
+        { line: 'G', color: '#6CBE45', minutes: 9, arrivalTime: now + 9 * 60_000, tripId: 'fixture-g-church', destination: 'Church Av' },
+      ],
+    };
+    freshnessAt = now;
+    return true;
+  }
 
   async function fetchTrains() {
+    if (useHoverFixture()) return;
+
     try {
       const res = await fetch('/api/trains');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -35,9 +69,12 @@
 
     const clockTick = setInterval(() => {
       const now = new Date();
-      clockStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      const h = now.getHours();
-      isDim = h >= 23 || h < 6;
+      clockStr = now.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/New_York',
+      });
       tick++;
     }, 1_000);
 
@@ -47,6 +84,7 @@
       shiftY = Math.round(Math.cos(t / 23) * 4);
     }, 5_000);
 
+    /** @type {WakeLockSentinel | null} */
     let wakeLock = null;
     async function acquireWakeLock() {
       try {
@@ -73,7 +111,6 @@
 
 <div
   class="shell"
-  class:dim={isDim}
   style="transform: translate({shiftX}px, {shiftY}px)"
 >
   <!-- Minimal header bar -->
@@ -94,10 +131,22 @@
   <!-- Split layout: map left, clocks right -->
   <main>
     <div class="panel map-panel">
-      <StationMap trains={trains} fetchedAt={freshnessAt} tick={tick} />
+      <StationMap
+        trains={trains}
+        fetchedAt={freshnessAt}
+        tick={tick}
+        activeTrainId={hoveredTrainId}
+        onTrainHover={setHoveredTrain}
+      />
     </div>
     <div class="panel clock-panel">
-      <Clocks trains={trains} fetchedAt={freshnessAt} tick={tick} />
+      <Clocks
+        trains={trains}
+        fetchedAt={freshnessAt}
+        tick={tick}
+        activeTrainId={hoveredTrainId}
+        onTrainHover={setHoveredTrain}
+      />
     </div>
   </main>
 
@@ -116,11 +165,6 @@
     color: var(--text-primary);
     overflow: hidden;
     /* pixel-shift is applied via inline transform */
-    transition: opacity 1s;
-  }
-
-  .shell.dim {
-    opacity: 0.35;
   }
 
   header {

@@ -1,13 +1,30 @@
 <script>
-  /** @type {Record<string, Array<{line: string, color: string, minutes: number}>>} */
-  let { trains = {}, fetchedAt = 0, tick = 0 } = $props();
+  import { onMount } from 'svelte';
+  import { trainKey } from './train-key.js';
+
+  /**
+   * @typedef {{x: number, y: number}} Point
+   * @typedef {{dx: number, dy: number}} Offset
+   * @typedef {{line: string, color: string, minutes: number, arrivalTime?: number, tripId?: string}} TrainArrival
+   * @typedef {{id: string, x: number, y: number, color: string, angle: number}} TrainDot
+   * @typedef {{trains?: Record<string, TrainArrival[]>, fetchedAt?: number, tick?: number, activeTrainId?: string | null, onTrainHover?: (id: string | null) => void}} StationMapProps
+   */
+
+  /** @type {StationMapProps} */
+  let {
+    trains = {},
+    fetchedAt = 0,
+    tick = 0,
+    activeTrainId = null,
+    onTrainHover = () => {},
+  } = $props();
 
   const W = 500, H = 600;
 
   // J/M corridor centerline anchors
-  const JM_SW   = { x: 45,  y: 530 };
-  const HEWES_C = { x: 210, y: 290 };
-  const JM_NE   = { x: 460, y: 65  };
+  const JM_SW   = { x: -55, y: -40 };
+  const HEWES_C = { x: 430, y: 510 };
+  const JM_NE   = { x: 555, y: 655 };
 
   // Perpendicular offset so J and M run side-by-side
   const JM_LEN = Math.hypot(JM_NE.x - JM_SW.x, JM_NE.y - JM_SW.y);
@@ -20,6 +37,7 @@
   const JO = { dx: -PX * OFF, dy: -PY * OFF }; // J: NW side of corridor
   const MO = { dx:  PX * OFF, dy:  PY * OFF }; // M: SE side of corridor
 
+  /** @param {Point} pt @param {Offset} o */
   function sh(pt, o) { return { x: pt.x + o.dx, y: pt.y + o.dy }; }
 
   // J ribbon anchor points
@@ -33,82 +51,219 @@
   const M_NE = sh(JM_NE,   MO);
 
   // G corridor (vertical)
-  const G_N  = { x: 290, y: 15  };
-  const BWAY = { x: 290, y: 390 };
-  const G_S  = { x: 290, y: 585 };
+  const G_N  = { x: 160, y: -35 };
+  const BWAY = { x: 160, y: 300 };
+  const G_S  = { x: 160, y: 640 };
 
   // Hewes label anchor (midpoint between J and M ribbons)
   const HEWES_MID = { x: (J_H.x + M_H.x) / 2, y: (J_H.y + M_H.y) / 2 };
 
-  // City blocks — dark rectangles suggesting the Williamsburg block grid.
-  // Placed to avoid overlapping the main corridor paths.
+  // City blocks — dark rectangles suggesting the real Broadway / Hewes / New Montrose area.
+  // Kept schematic so the station relationships stay legible at kiosk distance.
   const BLOCKS = [
-    // NW quadrant (above J/M diagonal, left of G)
-    { x: 15,  y: 15,  w: 155, h: 70  },
-    { x: 15,  y: 105, w: 125, h: 80  },
-    { x: 15,  y: 205, w: 85,  h: 65  },
-    { x: 115, y: 185, w: 80,  h: 55  },
-    // NE quadrant (above J/M, right of G)
-    { x: 315, y: 15,  w: 165, h: 70  },
-    { x: 340, y: 105, w: 140, h: 50  },
-    // SW quadrant (below J/M, left of G)
-    { x: 15,  y: 440, w: 150, h: 80  },
-    { x: 15,  y: 540, w: 120, h: 42  },
-    // SE quadrant (below J/M, right of G)
-    { x: 315, y: 245, w: 165, h: 75  },
-    { x: 315, y: 440, w: 165, h: 80  },
-    { x: 315, y: 540, w: 165, h: 42  },
+    { x: 18,  y: 34,  w: 96,  h: 82,  fill: '#171717' },
+    { x: 202, y: 26,  w: 120, h: 70,  fill: '#1c1c1c' },
+    { x: 348, y: 28,  w: 118, h: 92,  fill: '#151515' },
+    { x: 18,  y: 150, w: 98,  h: 86,  fill: '#1a1a1a' },
+    { x: 205, y: 138, w: 170, h: 95,  fill: '#171717' },
+    { x: 392, y: 155, w: 84,  h: 116, fill: '#1d1d1d' },
+    { x: 22,  y: 280, w: 96,  h: 88,  fill: '#161616' },
+    { x: 205, y: 286, w: 94,  h: 92,  fill: '#1b1b1b' },
+    { x: 330, y: 310, w: 142, h: 80,  fill: '#181818' },
+    { x: 22,  y: 418, w: 128, h: 74,  fill: '#1c1c1c' },
+    { x: 302, y: 420, w: 82,  h: 70,  fill: '#151515' },
+    { x: 392, y: 438, w: 82,  h: 82,  fill: '#1a1a1a' },
+    { x: 30,  y: 532, w: 120, h: 52,  fill: '#171717' },
+    { x: 188, y: 520, w: 126, h: 64,  fill: '#1c1c1c' },
+    { x: 342, y: 550, w: 112, h: 44,  fill: '#161616' },
   ];
 
+  const ROAD_HINTS = [
+    { points: [{ x: -20, y: 128 }, { x: 520, y: 128 }], width: 6 },
+    { points: [{ x: -20, y: 260 }, { x: 520, y: 260 }], width: 5 },
+    { points: [{ x: -20, y: 408 }, { x: 520, y: 408 }], width: 6 },
+    { points: [{ x: 132, y: -20 }, { x: 132, y: 620 }], width: 5 },
+    { points: [{ x: 338, y: -20 }, { x: 338, y: 620 }], width: 4 },
+    { points: [{ x: 70, y: 610 }, { x: 500, y: 130 }], width: 5 },
+  ];
+
+  const DIRECTION_LABELS = [
+    { text: '< MANHATTAN-BOUND', x: 40, y: 122, rotate: 48 },
+    { text: 'OUTBOUND >', x: 420, y: 555, rotate: 48 },
+    { text: 'COURT SQ', x: 184, y: 112, rotate: -90 },
+    { text: 'CHURCH AV', x: 184, y: 520, rotate: 90 },
+  ];
+
+  /** @param {Point[]} arr */
   function pts(arr) {
     return arr.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   }
 
+  /** @param {Point} a @param {Point} b @param {number} t */
   function lerp(a, b, t) {
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
   }
 
-  const MAX_MIN = 25;
+  /** @param {number} n @param {number} min @param {number} max */
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
 
-  const liveDots = $derived.by(() => {
-    void tick;
-    if (!fetchedAt) return [];
-    const elapsedMin = (Date.now() - fetchedAt) / 60_000;
-    /** @type {Array<{x: number, y: number, color: string}>} */
+  const LOOKAHEAD_MS = 25 * 60_000;
+  const STATION_HOLD_MS = 15_000;
+  const DOT_SMOOTHING_MS = 450;
+
+  /** @type {TrainDot[]} */
+  let liveDots = $state([]);
+  /** @type {Map<string, Omit<TrainDot, 'id'>>} */
+  const dotPositions = new Map();
+  const gDots = $derived(liveDots.filter(dot => dot.color === '#6CBE45'));
+  const jmDots = $derived(liveDots.filter(dot => dot.color !== '#6CBE45'));
+
+  /** @param {number} nowMs */
+  function buildTargetDots(nowMs) {
+    /** @type {TrainDot[]} */
     const dots = [];
 
-    function addDots(arrivals, stationPt, terminusPt, color) {
+    /**
+     * @param {string} stopId
+     * @param {TrainArrival[] | undefined} arrivals
+     * @param {string} line
+     * @param {Point} stationPt
+     * @param {Point} terminusPt
+     * @param {string} color
+     */
+    function addDots(stopId, arrivals, line, stationPt, terminusPt, color) {
+      let index = 0;
+      const angle = Math.atan2(stationPt.y - terminusPt.y, stationPt.x - terminusPt.x) * 180 / Math.PI;
       for (const a of arrivals ?? []) {
-        const mins = a.minutes - elapsedMin;
-        if (mins < 0 || mins > MAX_MIN) continue;
-        const pos = lerp(stationPt, terminusPt, mins / MAX_MIN);
-        dots.push({ x: pos.x, y: pos.y, color });
+        if (a.line !== line) continue;
+        const arrivalMs = a.arrivalTime ?? fetchedAt + a.minutes * 60_000;
+        const remainingMs = arrivalMs - nowMs;
+        if (remainingMs < -STATION_HOLD_MS || remainingMs > LOOKAHEAD_MS) continue;
+
+        const progress = clamp(remainingMs / LOOKAHEAD_MS, 0, 1);
+        const pos = lerp(stationPt, terminusPt, progress);
+        dots.push({ id: trainKey(stopId, a, index), x: pos.x, y: pos.y, color, angle });
+        index++;
       }
     }
 
-    addDots(trains.M14N?.filter(a => a.line === 'J'), J_H,  J_SW, '#996633');
-    addDots(trains.M14N?.filter(a => a.line === 'M'), M_H,  M_SW, '#FF6319');
-    addDots(trains.M14S?.filter(a => a.line === 'J'), J_H,  J_NE, '#996633');
-    addDots(trains.M14S?.filter(a => a.line === 'M'), M_H,  M_NE, '#FF6319');
-    addDots(trains.G30N?.filter(a => a.line === 'G'), BWAY, G_S,  '#6CBE45');
-    addDots(trains.G30S?.filter(a => a.line === 'G'), BWAY, G_N,  '#6CBE45');
+    addDots('M14N', trains.M14N, 'J', J_H,  J_SW, '#996633');
+    addDots('M14N', trains.M14N, 'M', M_H,  M_SW, '#FF6319');
+    addDots('M14S', trains.M14S, 'J', J_H,  J_NE, '#996633');
+    addDots('M14S', trains.M14S, 'M', M_H,  M_NE, '#FF6319');
+    addDots('G30N', trains.G30N, 'G', BWAY, G_S,  '#6CBE45');
+    addDots('G30S', trains.G30S, 'G', BWAY, G_N,  '#6CBE45');
 
     return dots;
+  }
+
+  /** @param {TrainDot[]} targets @param {number} alpha */
+  function smoothDots(targets, alpha) {
+    const activeIds = new Set(targets.map(dot => dot.id));
+    for (const id of dotPositions.keys()) {
+      if (!activeIds.has(id)) dotPositions.delete(id);
+    }
+
+    for (const target of targets) {
+      const current = dotPositions.get(target.id);
+      if (!current) {
+        dotPositions.set(target.id, { ...target });
+        continue;
+      }
+
+      current.x += (target.x - current.x) * alpha;
+      current.y += (target.y - current.y) * alpha;
+      current.color = target.color;
+      current.angle = target.angle;
+    }
+
+    liveDots = Array.from(dotPositions, ([id, dot]) => ({ id, ...dot }));
+  }
+
+  onMount(() => {
+    let lastFrameTs = 0;
+    let rafId = 0;
+
+    function frame(ts) {
+      const dt = lastFrameTs ? ts - lastFrameTs : 16;
+      lastFrameTs = ts;
+      const alpha = 1 - Math.exp(-dt / DOT_SMOOTHING_MS);
+      smoothDots(buildTargetDots(Date.now()), alpha);
+      rafId = requestAnimationFrame(frame);
+    }
+
+    rafId = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(rafId);
   });
 </script>
 
 <div class="map-wrap">
   <svg viewBox="0 0 {W} {H}" role="img" aria-label="Neighborhood schematic map — Hewes St and Broadway stations">
+    <defs>
+      <filter id="dot-glow">
+        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="rgba(255,255,255,0.5)"/>
+      </filter>
+    </defs>
+
+    <rect x="0" y="0" width={W} height={H} fill="#050505"/>
+
+    <!-- Faint street structure; context only, not a map layer. -->
+    {#each ROAD_HINTS as road}
+      <polyline
+        points={pts(road.points)}
+        fill="none"
+        stroke="rgba(255,255,255,0.035)"
+        stroke-width={road.width}
+        stroke-linecap="round"
+      />
+    {/each}
 
     <!-- City block grid -->
     {#each BLOCKS as b}
-      <rect x={b.x} y={b.y} width={b.w} height={b.h} rx="4" fill="#181818"/>
+      <rect x={b.x} y={b.y} width={b.w} height={b.h} rx="4" fill={b.fill}/>
+    {/each}
+
+    <!-- Direction cues -->
+    {#each DIRECTION_LABELS as label}
+      <text
+        x={label.x} y={label.y}
+        class="direction-label"
+        transform="rotate({label.rotate} {label.x} {label.y})"
+      >{label.text}</text>
     {/each}
 
     <!-- G ribbon (draw first so J/M cross on top) -->
     <polyline points={pts([G_N, BWAY, G_S])}
       fill="none" stroke="#6CBE45" stroke-width="14"
       stroke-linecap="round" stroke-linejoin="round"/>
+
+    <circle class="station-anchor" cx={BWAY.x} cy={BWAY.y} r="9"/>
+
+    <!-- G trains stay under the elevated J/M corridor at the crossing. -->
+    {#each gDots as dot (dot.id)}
+      <g
+        class="train-dot"
+        class:active-dot={dot.id === activeTrainId}
+        role="button"
+        tabindex="0"
+        aria-label="Train approaching Broadway"
+        data-train-id={dot.id}
+        transform="translate({dot.x.toFixed(1)} {dot.y.toFixed(1)}) rotate({dot.angle.toFixed(1)})"
+        filter="url(#dot-glow)"
+        onpointerenter={() => onTrainHover(dot.id)}
+        onpointerleave={() => onTrainHover(null)}
+        onfocus={() => onTrainHover(dot.id)}
+        onblur={() => onTrainHover(null)}
+      >
+        {#if dot.id === activeTrainId}
+          <circle class="active-dot-ring" r="13"/>
+        {/if}
+        <circle r="8" fill={dot.color} stroke="white" stroke-width="2"/>
+        <path class="train-chevron" d="M -4 -5 L 4 0 L -4 5"/>
+      </g>
+    {/each}
 
     <!-- J ribbon -->
     <polyline points={pts([J_SW, J_H, J_NE])}
@@ -120,25 +275,51 @@
       fill="none" stroke="#FF6319" stroke-width="14"
       stroke-linecap="round" stroke-linejoin="round"/>
 
-    <!-- Live train dots -->
-    {#each liveDots as dot}
-      <circle
-        cx={dot.x.toFixed(1)} cy={dot.y.toFixed(1)}
-        r="7" fill={dot.color} stroke="white" stroke-width="2"
-      />
+    <rect
+      class="station-anchor"
+      x={HEWES_MID.x - 20}
+      y={HEWES_MID.y - 7}
+      width="40"
+      height="14"
+      rx="7"
+      transform="rotate(48 {HEWES_MID.x} {HEWES_MID.y})"
+    />
+
+    <!-- J/M train dots sit on top of their route ribbons. -->
+    {#each jmDots as dot (dot.id)}
+      <g
+        class="train-dot"
+        class:active-dot={dot.id === activeTrainId}
+        role="button"
+        tabindex="0"
+        aria-label="Train approaching Hewes St"
+        data-train-id={dot.id}
+        transform="translate({dot.x.toFixed(1)} {dot.y.toFixed(1)}) rotate({dot.angle.toFixed(1)})"
+        filter="url(#dot-glow)"
+        onpointerenter={() => onTrainHover(dot.id)}
+        onpointerleave={() => onTrainHover(null)}
+        onfocus={() => onTrainHover(dot.id)}
+        onblur={() => onTrainHover(null)}
+      >
+        {#if dot.id === activeTrainId}
+          <circle class="active-dot-ring" r="13"/>
+        {/if}
+        <circle r="8" fill={dot.color} stroke="white" stroke-width="2"/>
+        <path class="train-chevron" d="M -4 -5 L 4 0 L -4 5"/>
+      </g>
     {/each}
 
     <!-- Hewes St station pill (spans both J and M ribbons) -->
     <rect
-      x={HEWES_MID.x - 66} y={HEWES_MID.y - 44}
+      x={HEWES_MID.x - 66} y={HEWES_MID.y - 46}
       width="132" height="30" rx="6"
       fill="rgba(12,12,12,0.95)" stroke="rgba(255,255,255,0.14)" stroke-width="1"
     />
-    <circle cx={HEWES_MID.x - 46} cy={HEWES_MID.y - 29} r="8" fill="#996633"/>
-    <text x={HEWES_MID.x - 46} y={HEWES_MID.y - 25} class="bullet-text">J</text>
-    <text x={HEWES_MID.x - 28} y={HEWES_MID.y - 24} class="station-name">HEWES ST</text>
-    <circle cx={HEWES_MID.x + 58} cy={HEWES_MID.y - 29} r="8" fill="#FF6319"/>
-    <text x={HEWES_MID.x + 58} y={HEWES_MID.y - 25} class="bullet-text">M</text>
+    <circle cx={HEWES_MID.x - 39} cy={HEWES_MID.y - 31} r="8" fill="#996633"/>
+    <text x={HEWES_MID.x - 39} y={HEWES_MID.y - 31} class="bullet-text">J</text>
+    <circle cx={HEWES_MID.x - 19} cy={HEWES_MID.y - 31} r="8" fill="#FF6319"/>
+    <text x={HEWES_MID.x - 19} y={HEWES_MID.y - 31} class="bullet-text">M</text>
+    <text x={HEWES_MID.x + 22} y={HEWES_MID.y - 31} class="station-name" text-anchor="middle">HEWES ST</text>
 
     <!-- Broadway station pill -->
     <rect
@@ -146,29 +327,9 @@
       width="116" height="30" rx="6"
       fill="rgba(12,12,12,0.95)" stroke="rgba(255,255,255,0.14)" stroke-width="1"
     />
-    <circle cx={BWAY.x - 38} cy={BWAY.y - 29} r="8" fill="#6CBE45"/>
-    <text x={BWAY.x - 38} y={BWAY.y - 25} class="bullet-text">G</text>
-    <text x={BWAY.x - 20} y={BWAY.y - 24} class="station-name">BROADWAY</text>
-
-    <!-- J/M terminus labels -->
-    <circle cx="14" cy="510" r="5" fill="#996633"/>
-    <text x="24" y="514" class="terminus-label">JAMAICA</text>
-
-    <circle cx="14" cy="550" r="5" fill="#FF6319"/>
-    <text x="24" y="554" class="terminus-label">MET AVE</text>
-
-    <circle cx="486" cy="56" r="5" fill="#996633"/>
-    <text x="476" y="51" class="terminus-label" text-anchor="end">BROAD ST</text>
-
-    <circle cx="486" cy="70" r="5" fill="#FF6319"/>
-    <text x="476" y="65" class="terminus-label" text-anchor="end">FOREST HILLS</text>
-
-    <!-- G terminus labels -->
-    <circle cx="290" cy="26" r="5" fill="#6CBE45"/>
-    <text x="300" y="30" class="terminus-label">COURT SQ</text>
-
-    <circle cx="290" cy="574" r="5" fill="#6CBE45"/>
-    <text x="300" y="578" class="terminus-label">CHURCH AV</text>
+    <circle cx={BWAY.x - 31} cy={BWAY.y - 29} r="8" fill="#6CBE45"/>
+    <text x={BWAY.x - 31} y={BWAY.y - 29} class="bullet-text">G</text>
+    <text x={BWAY.x + 10} y={BWAY.y - 29} class="station-name" text-anchor="middle">BROADWAY</text>
 
   </svg>
 </div>
@@ -204,12 +365,45 @@
     letter-spacing: 0.08em;
     dominant-baseline: middle;
   }
-  .terminus-label {
+  .station-anchor {
+    fill: #8c8c8c;
+    stroke: rgba(255, 255, 255, 0.72);
+    stroke-width: 2;
+    filter: url(#dot-glow);
+  }
+  .train-chevron {
+    fill: none;
+    stroke: #ffffff;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+  .train-dot {
+    pointer-events: visiblePainted;
+    cursor: pointer;
+  }
+  .active-dot-ring {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.86);
+    stroke-width: 2;
+    pointer-events: none;
+    animation: train-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes train-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+  .direction-label {
     font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
-    font-size: 8px;
-    font-weight: 600;
-    fill: rgba(255, 255, 255, 0.35);
-    letter-spacing: 0.08em;
+    font-size: 9px;
+    font-weight: 800;
+    fill: rgba(255, 255, 255, 0.32);
+    letter-spacing: 0.12em;
+    text-anchor: middle;
     dominant-baseline: middle;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.65);
+    stroke-width: 3px;
   }
 </style>

@@ -1,6 +1,6 @@
 /* Global reset + theme tokens */
 :root {
-	--bg: #0a0a0a;
+	--bg: #000000;
 	--panel-bg: #111111;
 	--border: rgba(255, 255, 255, 0.08);
 	--text-primary: rgba(255, 255, 255, 0.92);

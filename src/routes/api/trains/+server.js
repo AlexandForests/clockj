@@ -11,7 +11,11 @@ function toNumber(raw) {
   return Number(raw);
 }
 
-/** Fetch + decode one GTFS-RT feed. Returns [] on any error. */
+/**
+ * Fetch + decode one GTFS-RT feed. Returns [] on any error.
+ * @param {string} feedKey
+ * @param {string} url
+ */
 async function fetchFeed(feedKey, url) {
   let buf;
   try {
@@ -42,7 +46,7 @@ export async function GET() {
     fetchFeed('G',    FEED_URLS.G),
   ]);
 
-  /** @type {Record<string, Array<{line: string, color: string, minutes: number, destination: string}>>} */
+  /** @type {Record<string, Array<{line: string, color: string, minutes: number, arrivalTime: number, tripId: string, stopSequence: number | null, destination: string}>>} */
   const result = { M14N: [], M14S: [], G30N: [], G30S: [] };
 
   /** @param {any[]} entities  @param {Set<string>} allowedLines */
@@ -54,10 +58,11 @@ export async function GET() {
       const routeId = String(tu.trip?.routeId ?? '').toUpperCase();
       if (!allowedLines.has(routeId)) continue;
 
-      const lineInfo = LINES[routeId];
+      const lineInfo = LINES[/** @type {keyof typeof LINES} */ (routeId)];
       if (!lineInfo) continue;
 
       const headsign = String(tu.trip?.tripHeadsign ?? '');
+      const tripId = String(tu.trip?.tripId ?? entity.id ?? '');
 
       for (const stu of tu.stopTimeUpdate) {
         const stopId = String(stu.stopId ?? '');
@@ -69,12 +74,16 @@ export async function GET() {
         const minutes = Math.round((dep - now) / 60);
         if (minutes < 0) continue; // already departed
 
-        const destination = headsign || DESTINATIONS[stopId]?.[routeId] || '';
+        const stopDestinations = DESTINATIONS[/** @type {keyof typeof DESTINATIONS} */ (stopId)];
+        const destination = headsign || stopDestinations?.[/** @type {keyof typeof stopDestinations} */ (routeId)] || '';
 
         result[stopId].push({
           line: routeId,
           color: lineInfo.color,
           minutes,
+          arrivalTime: dep * 1000,
+          tripId,
+          stopSequence: toNumber(stu.stopSequence),
           destination,
         });
       }
