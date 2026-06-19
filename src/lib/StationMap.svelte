@@ -109,9 +109,23 @@
     return Math.max(min, Math.min(max, n));
   }
 
+  /** Blend a #rrggbb hex toward white so a car reads as a lighter shade of its line.
+   * @param {string} hex @param {number} amt 0..1 */
+  function lighten(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const mix = c => Math.round(c + (255 - c) * amt);
+    return `rgb(${mix((n >> 16) & 255)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+  }
+
   const LOOKAHEAD_MS = 25 * 60_000;
   const STATION_HOLD_MS = 15_000;
   const DOT_SMOOTHING_MS = 450;
+
+  // Train car geometry (local frame, +x = direction of travel)
+  const CAR_LEN = 22;   // length along travel
+  const CAR_W   = 11;   // width
+  const CAR_RX  = 4;    // corner radius
+  const LANE    = 4;    // perpendicular offset onto the right-hand lane (+y local)
 
   /** @type {TrainDot[]} */
   let liveDots = $state([]);
@@ -199,6 +213,21 @@
   });
 </script>
 
+{#snippet trainCar(dot)}
+  {#if dot.id === activeTrainId}
+    <rect class="active-car-halo"
+      x={-CAR_LEN / 2 - 2} y={LANE - CAR_W / 2 - 2}
+      width={CAR_LEN + 4} height={CAR_W + 4} rx={CAR_RX + 2}/>
+  {/if}
+  <rect class="train-car"
+    x={-CAR_LEN / 2} y={LANE - CAR_W / 2}
+    width={CAR_LEN} height={CAR_W} rx={CAR_RX}
+    fill={lighten(dot.color, 0.42)}/>
+  <rect class="train-headlight"
+    x={CAR_LEN / 2 - 3} y={LANE - 3.5}
+    width={3} height={7} rx={1.5}/>
+{/snippet}
+
 <div class="map-wrap">
   <svg viewBox="0 0 {W} {H}" role="img" aria-label="Neighborhood schematic map — Hewes St and Broadway stations">
     <defs>
@@ -257,11 +286,7 @@
         onfocus={() => onTrainHover(dot.id)}
         onblur={() => onTrainHover(null)}
       >
-        {#if dot.id === activeTrainId}
-          <circle class="active-dot-ring" r="13"/>
-        {/if}
-        <circle r="8" fill={dot.color} stroke="white" stroke-width="2"/>
-        <path class="train-chevron" d="M -4 -5 L 4 0 L -4 5"/>
+        {@render trainCar(dot)}
       </g>
     {/each}
 
@@ -301,11 +326,7 @@
         onfocus={() => onTrainHover(dot.id)}
         onblur={() => onTrainHover(null)}
       >
-        {#if dot.id === activeTrainId}
-          <circle class="active-dot-ring" r="13"/>
-        {/if}
-        <circle r="8" fill={dot.color} stroke="white" stroke-width="2"/>
-        <path class="train-chevron" d="M -4 -5 L 4 0 L -4 5"/>
+        {@render trainCar(dot)}
       </g>
     {/each}
 
@@ -371,19 +392,20 @@
     stroke-width: 2;
     filter: url(#dot-glow);
   }
-  .train-chevron {
-    fill: none;
-    stroke: #ffffff;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+  .train-car {
+    stroke: #fff;
+    stroke-width: 1.5;
+  }
+  .train-headlight {
+    fill: #fff7e0;
+    opacity: 0.95;
     pointer-events: none;
   }
   .train-dot {
     pointer-events: visiblePainted;
     cursor: pointer;
   }
-  .active-dot-ring {
+  .active-car-halo {
     fill: none;
     stroke: rgba(255, 255, 255, 0.86);
     stroke-width: 2;
