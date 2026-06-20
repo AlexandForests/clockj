@@ -17,3 +17,6 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.test
+
+# Editor / tooling
+.claude/

@@ -113,7 +113,7 @@
    * @param {string} hex @param {number} amt 0..1 */
   function lighten(hex, amt) {
     const n = parseInt(hex.slice(1), 16);
-    const mix = c => Math.round(c + (255 - c) * amt);
+    const mix = (/** @type {number} */ c) => Math.round(c + (255 - c) * amt);
     return `rgb(${mix((n >> 16) & 255)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
   }
 
@@ -213,6 +213,7 @@
     let lastFrameTs = 0;
     let rafId = 0;
 
+    /** @param {number} ts */
     function frame(ts) {
       const dt = lastFrameTs ? ts - lastFrameTs : 16;
       lastFrameTs = ts;
@@ -226,7 +227,7 @@
   });
 </script>
 
-{#snippet trainCar(dot)}
+{#snippet trainCar(/** @type {TrainDot} */ dot)}
   {#if dot.id === activeTrainId}
     <rect class="active-car-halo"
       x={-CAR_LEN / 2 - 2} y={LANE - CAR_W / 2 - 2}

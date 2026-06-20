@@ -94,7 +94,7 @@ export async function GET() {
   processEntities(bdfmEntities, FEED_LINES.BDFM);
   processEntities(gEntities,    FEED_LINES.G);
 
-  // Sort each platform's arrivals by minutes, dedupe exact duplicates
+  // Sort each platform's arrivals soonest-first
   for (const stopId of Object.keys(result)) {
     result[stopId].sort((a, b) => a.minutes - b.minutes);
   }
