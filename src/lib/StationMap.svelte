@@ -6,7 +6,7 @@
    * @typedef {{x: number, y: number}} Point
    * @typedef {{dx: number, dy: number}} Offset
    * @typedef {{line: string, color: string, minutes: number, arrivalTime?: number, tripId?: string}} TrainArrival
-   * @typedef {{id: string, x: number, y: number, color: string, angle: number}} TrainDot
+   * @typedef {{id: string, x: number, y: number, color: string, angle: number, passed: boolean, opacity: number}} TrainDot
    * @typedef {{trains?: Record<string, TrainArrival[]>, fetchedAt?: number, tick?: number, activeTrainId?: string | null, onTrainHover?: (id: string | null) => void}} StationMapProps
    */
 
@@ -118,7 +118,8 @@
   }
 
   const LOOKAHEAD_MS = 25 * 60_000;
-  const STATION_HOLD_MS = 15_000;
+  const STATION_HOLD_MS = 15_000;   // dwell at the station after arriving
+  const OUTBOUND_MS = 90_000;       // depart past the station, then fade out
   const DOT_SMOOTHING_MS = 450;
 
   // Train car geometry (local frame, +x = direction of travel)
@@ -154,11 +155,21 @@
         if (a.line !== line) continue;
         const arrivalMs = a.arrivalTime ?? fetchedAt + a.minutes * 60_000;
         const remainingMs = arrivalMs - nowMs;
-        if (remainingMs < -STATION_HOLD_MS || remainingMs > LOOKAHEAD_MS) continue;
+        if (remainingMs < -(STATION_HOLD_MS + OUTBOUND_MS) || remainingMs > LOOKAHEAD_MS) continue;
 
-        const progress = clamp(remainingMs / LOOKAHEAD_MS, 0, 1);
+        // Inbound: terminus -> station (progress 1 -> 0). Dwell at the station for
+        // STATION_HOLD_MS (progress 0). Then depart past the station along the same
+        // heading (progress 0 -> -1, extrapolating the lerp) and fade out.
+        const departMs = remainingMs + STATION_HOLD_MS; // <0 once the dwell ends
+        const passed = departMs < 0;
+        const progress = passed
+          ? clamp(departMs / OUTBOUND_MS, -1, 0)
+          : clamp(remainingMs / LOOKAHEAD_MS, 0, 1);
+        const opacity = passed
+          ? clamp((departMs + OUTBOUND_MS) / (0.4 * OUTBOUND_MS), 0, 1)
+          : 1;
         const pos = lerp(stationPt, terminusPt, progress);
-        dots.push({ id: trainKey(stopId, a, index), x: pos.x, y: pos.y, color, angle });
+        dots.push({ id: trainKey(stopId, a, index), x: pos.x, y: pos.y, color, angle, passed, opacity });
         index++;
       }
     }
@@ -191,6 +202,8 @@
       current.y += (target.y - current.y) * alpha;
       current.color = target.color;
       current.angle = target.angle;
+      current.passed = target.passed;
+      current.opacity = target.opacity;
     }
 
     liveDots = Array.from(dotPositions, ([id, dot]) => ({ id, ...dot }));
@@ -275,11 +288,14 @@
       <g
         class="train-dot"
         class:active-dot={dot.id === activeTrainId}
+        class:passed={dot.passed}
         role="button"
-        tabindex="0"
+        tabindex={dot.passed ? -1 : 0}
+        aria-hidden={dot.passed}
         aria-label="Train approaching Broadway"
         data-train-id={dot.id}
         transform="translate({dot.x.toFixed(1)} {dot.y.toFixed(1)}) rotate({dot.angle.toFixed(1)})"
+        opacity={dot.opacity}
         filter="url(#dot-glow)"
         onpointerenter={() => onTrainHover(dot.id)}
         onpointerleave={() => onTrainHover(null)}
@@ -315,11 +331,14 @@
       <g
         class="train-dot"
         class:active-dot={dot.id === activeTrainId}
+        class:passed={dot.passed}
         role="button"
-        tabindex="0"
+        tabindex={dot.passed ? -1 : 0}
+        aria-hidden={dot.passed}
         aria-label="Train approaching Hewes St"
         data-train-id={dot.id}
         transform="translate({dot.x.toFixed(1)} {dot.y.toFixed(1)}) rotate({dot.angle.toFixed(1)})"
+        opacity={dot.opacity}
         filter="url(#dot-glow)"
         onpointerenter={() => onTrainHover(dot.id)}
         onpointerleave={() => onTrainHover(null)}
@@ -404,6 +423,9 @@
   .train-dot {
     pointer-events: visiblePainted;
     cursor: pointer;
+  }
+  .train-dot.passed {
+    pointer-events: none;
   }
   .active-car-halo {
     fill: none;
