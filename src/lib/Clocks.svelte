@@ -1,20 +1,28 @@
 <script>
-  import { STATIONS } from './stations.js';
+  import { STATIONS, PLATFORM_FEED, WALK_MINUTES } from './stations.js';
   import { trainKey } from './train-key.js';
 
   /**
    * @typedef {{line: string, color: string, minutes: number, arrivalTime?: number, tripId?: string, destination: string}} TrainArrival
-   * @typedef {{trains?: Record<string, TrainArrival[]>, fetchedAt?: number, tick?: number, activeTrainId?: string | null, onTrainHover?: (id: string | null) => void}} ClocksProps
+   * @typedef {{trains?: Record<string, TrainArrival[]>, feedHealth?: Record<string, boolean>, fetchedAt?: number, tick?: number, activeTrainId?: string | null, onTrainHover?: (id: string | null) => void}} ClocksProps
    */
 
   /** @type {ClocksProps} */
   let {
     trains = {},
+    feedHealth = {},
     fetchedAt = 0,
     tick = 0,
     activeTrainId = null,
     onTrainHover = () => {},
   } = $props();
+
+  /** A platform's data is unavailable (vs. genuinely empty) when one of its feeds failed.
+   * @param {string} stopId */
+  function feedDown(stopId) {
+    return (PLATFORM_FEED[/** @type {keyof typeof PLATFORM_FEED} */ (stopId)] ?? [])
+      .some(f => feedHealth[f] === false);
+  }
 
   const platforms = $derived.by(() => {
     void tick; // reactive dependency — recomputes every second
@@ -39,16 +47,39 @@
     const m = Math.ceil(min);
     return m < 60 ? String(m) : `${Math.floor(m / 60)}h ${m % 60}m`;
   }
+
+  const LEAVE_WINDOW = 15; // only surface the cue when you'd leave within this many minutes
+
+  /** When to leave to catch the soonest train you can still make on foot.
+   * @param {TrainArrival[]} arrivals @param {number} walkMin
+   * @returns {{now: boolean, mins: number} | null} */
+  function leaveCue(arrivals, walkMin) {
+    const t = arrivals.find(a => a.minutes >= walkMin - 0.5);
+    if (!t) return null;
+    const leaveIn = t.minutes - walkMin;
+    if (leaveIn <= 0.5) return { now: true, mins: 0 };
+    if (leaveIn > LEAVE_WINDOW) return null;
+    return { now: false, mins: Math.max(1, Math.round(leaveIn)) };
+  }
 </script>
 
 <div class="clocks">
-  {#each Object.values(STATIONS) as station}
+  {#each Object.entries(STATIONS) as [stationKey, station]}
+    {@const walkMin = WALK_MINUTES[/** @type {keyof typeof WALK_MINUTES} */ (stationKey)] ?? 5}
     <section class="station">
       <h2 class="station-name">{station.name}</h2>
       {#each Object.entries(station.platforms) as [stopId, platform]}
         {@const arrivals = platforms[stopId] ?? []}
+        {@const cue = leaveCue(arrivals, walkMin)}
         <div class="platform">
-          <div class="platform-dir">{platform.label}</div>
+          <div class="platform-dir">
+            <span>{platform.label}</span>
+            {#if cue}
+              <span class="leave" class:now={cue.now}>
+                {cue.now ? 'Leave now' : `Leave in ${cue.mins}`}
+              </span>
+            {/if}
+          </div>
           <div class="rows">
             {#each arrivals.slice(0, 3) as arrival, i (trainKey(stopId, arrival, i))}
               {@const id = trainKey(stopId, arrival, i)}
@@ -56,6 +87,7 @@
                 type="button"
                 class="row"
                 class:active={id === activeTrainId}
+                class:imminent={arrival.minutes <= 2}
                 data-train-id={id}
                 style={`--line-color: ${arrival.color}`}
                 onpointerenter={() => onTrainHover(id)}
@@ -71,7 +103,7 @@
             {#if arrivals.length === 0}
               <div class="row empty">
                 <span class="bullet-empty">—</span>
-                <span class="dest dim">No trains</span>
+                <span class="dest dim">{feedDown(stopId) ? 'Service info unavailable' : 'No trains'}</span>
                 <span class="mins dim">—</span>
               </div>
             {/if}
@@ -116,12 +148,32 @@
   }
 
   .platform-dir {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.28);
     margin-bottom: 4px;
+  }
+
+  .leave {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+  }
+  .leave.now {
+    color: #6cbe45;
+    animation: leave-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes leave-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.45; }
   }
 
   .rows {
@@ -175,6 +227,15 @@
     color: #fff;
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Train arriving within ~2 min — its bullet pulses in the line color. */
+  .row.imminent .bullet {
+    animation: bullet-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes bullet-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50%      { box-shadow: 0 0 9px 1px var(--line-color); }
   }
 
   .bullet-empty {

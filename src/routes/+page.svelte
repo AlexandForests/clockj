@@ -3,12 +3,15 @@
   import { onMount } from 'svelte';
   import StationMap from '$lib/StationMap.svelte';
   import Clocks from '$lib/Clocks.svelte';
+  import { LINES } from '$lib/stations.js';
 
   /** @typedef {{line: string, color: string, minutes: number, arrivalTime?: number, tripId?: string, destination: string}} TrainArrival */
 
   // Trains data — single source, shared by Clocks and StationMap
   /** @type {Record<string, TrainArrival[]>} */
   let trains     = $state({});
+  /** @type {Record<string, boolean>} */
+  let feedHealth = $state({});
   let freshnessAt = $state(0);
   let clockStr = $state('');
   let shiftX   = $state(0);
@@ -16,9 +19,31 @@
   let tick     = $state(0);
   let hoveredTrainId = $state(/** @type {string | null} */ (null));
 
+  /** @typedef {{id: string, type: string, severity: number, status: string, routes: string[], header: string, period: string, updatedAt: number | null, startsAt: number | null}} Alert */
+  /** @type {Alert[]} */
+  let alerts      = $state([]);
+  let alertsTotal = $state(0);
+
+  /** @param {string} line */
+  function lineColor(line) {
+    return LINES[/** @type {keyof typeof LINES} */ (line)]?.color ?? '#888';
+  }
+
   const isStale   = $derived(tick >= 0 && freshnessAt > 0 && Date.now() - freshnessAt > 60_000);
   const hasData   = $derived(freshnessAt > 0);
   const staleSecs = $derived(tick >= 0 ? Math.round((Date.now() - freshnessAt) / 1000) : 0);
+
+  // Overnight dim (00:30–05:30 America/New_York) — cuts glare + burn-in on the kiosk.
+  const nightDim = $derived.by(() => {
+    void tick; // re-evaluate on the 1s tick
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    const h = (+(parts.find(p => p.type === 'hour')?.value ?? 0)) % 24;
+    const m = +(parts.find(p => p.type === 'minute')?.value ?? 0);
+    const mins = h * 60 + m;
+    return mins >= 30 && mins < 330;
+  });
 
   /** @param {string | null} id */
   function setHoveredTrain(id) {
@@ -56,16 +81,32 @@
     try {
       const res = await fetch('/api/trains');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      trains = await res.json();
+      const data = await res.json();
+      trains = data.platforms ?? data;
+      feedHealth = data.meta?.feeds ?? {};
       freshnessAt = Date.now();
     } catch (e) {
       console.error('[clockj] fetch trains failed:', e);
     }
   }
 
+  async function fetchAlerts() {
+    try {
+      const res = await fetch('/api/alerts');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      alerts = data.alerts ?? [];
+      alertsTotal = data.total ?? alerts.length;
+    } catch (e) {
+      console.error('[clockj] fetch alerts failed:', e);
+    }
+  }
+
   onMount(() => {
     fetchTrains();
+    fetchAlerts();
     const pollInterval = setInterval(fetchTrains, 30_000);
+    const alertInterval = setInterval(fetchAlerts, 60_000);
 
     const clockTick = setInterval(() => {
       const now = new Date();
@@ -97,6 +138,7 @@
 
     return () => {
       clearInterval(pollInterval);
+      clearInterval(alertInterval);
       clearInterval(clockTick);
       clearInterval(shiftTick);
       document.removeEventListener('visibilitychange', onVisible);
@@ -111,6 +153,7 @@
 
 <div
   class="shell"
+  class:night={nightDim}
   style="transform: translate({shiftX}px, {shiftY}px)"
 >
   <!-- Minimal header bar -->
@@ -128,6 +171,29 @@
     </div>
   </header>
 
+  {#if alerts.length}
+    <div class="alert-bar">
+      {#each alerts as a (a.id)}
+        <div class="alert sev{a.severity}">
+          <span class="alert-type">{a.type}</span>
+          <span class="alert-routes">
+            {#each a.routes as r}
+              <span class="alert-bullet" style="background:{lineColor(r)}">{r}</span>
+            {/each}
+          </span>
+          <span class="alert-header">{a.header}</span>
+          <span class="alert-when">
+            {#if a.status === 'upcoming'}<span class="alert-soon">SOON</span>{/if}
+            {a.period}
+          </span>
+        </div>
+      {/each}
+      {#if alertsTotal > alerts.length}
+        <div class="alert-more">+{alertsTotal - alerts.length} more</div>
+      {/if}
+    </div>
+  {/if}
+
   <!-- Split layout: map left, clocks right -->
   <main>
     <div class="panel map-panel">
@@ -135,6 +201,7 @@
         trains={trains}
         fetchedAt={freshnessAt}
         tick={tick}
+        night={nightDim}
         activeTrainId={hoveredTrainId}
         onTrainHover={setHoveredTrain}
       />
@@ -142,6 +209,7 @@
     <div class="panel clock-panel">
       <Clocks
         trains={trains}
+        feedHealth={feedHealth}
         fetchedAt={freshnessAt}
         tick={tick}
         activeTrainId={hoveredTrainId}
@@ -165,6 +233,10 @@
     color: var(--text-primary);
     overflow: hidden;
     /* pixel-shift is applied via inline transform */
+    transition: filter 1.5s ease;
+  }
+  .shell.night {
+    filter: brightness(0.5);
   }
 
   header {
@@ -225,6 +297,94 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.35; }
+  }
+
+  /* Service alerts — compact, glanceable rows below the header */
+  .alert-bar {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8, 8, 8, 0.9);
+    z-index: 4;
+  }
+
+  .alert {
+    --sev: #5a9fd4;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 16px;
+    border-left: 3px solid var(--sev);
+    background: color-mix(in srgb, var(--sev) 9%, transparent);
+    font-size: 12px;
+    line-height: 1.5;
+    min-width: 0;
+  }
+  .alert + .alert { border-top: 1px solid rgba(255, 255, 255, 0.05); }
+  .alert.sev2 { --sev: #e8483c; }
+  .alert.sev1 { --sev: #e8a020; }
+  .alert.sev0 { --sev: #5a9fd4; }
+
+  .alert-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sev);
+    white-space: nowrap;
+  }
+
+  .alert-routes {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .alert-bullet {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 800;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .alert-header {
+    flex: 1;
+    min-width: 0;
+    color: rgba(255, 255, 255, 0.86);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .alert-when {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .alert-soon {
+    font-weight: 800;
+    color: var(--sev);
+    letter-spacing: 0.08em;
+    margin-right: 4px;
+  }
+
+  .alert-more {
+    padding: 3px 16px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.02);
   }
 
   main {

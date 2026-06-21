@@ -53,6 +53,10 @@ export const STATIONS = {
   },
 };
 
+// Walking minutes from the display's location to each station entrance.
+// Drives the "leave now / leave in N" cue. Keyed by STATIONS key.
+export const WALK_MINUTES = { Hewes: 5, Broadway: 5 };
+
 // All target stop IDs we care about
 export const TARGET_STOPS = new Set(['M14N', 'M14S', 'G30N', 'G30S']);
 

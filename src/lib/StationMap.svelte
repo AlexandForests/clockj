@@ -6,8 +6,8 @@
    * @typedef {{x: number, y: number}} Point
    * @typedef {{dx: number, dy: number}} Offset
    * @typedef {{line: string, color: string, minutes: number, arrivalTime?: number, tripId?: string}} TrainArrival
-   * @typedef {{id: string, x: number, y: number, color: string, angle: number, passed: boolean, opacity: number}} TrainDot
-   * @typedef {{trains?: Record<string, TrainArrival[]>, fetchedAt?: number, tick?: number, activeTrainId?: string | null, onTrainHover?: (id: string | null) => void}} StationMapProps
+   * @typedef {{id: string, x: number, y: number, color: string, angle: number, passed: boolean, opacity: number, imminent: boolean}} TrainDot
+   * @typedef {{trains?: Record<string, TrainArrival[]>, fetchedAt?: number, tick?: number, night?: boolean, activeTrainId?: string | null, onTrainHover?: (id: string | null) => void}} StationMapProps
    */
 
   /** @type {StationMapProps} */
@@ -15,6 +15,7 @@
     trains = {},
     fetchedAt = 0,
     tick = 0,
+    night = false,
     activeTrainId = null,
     onTrainHover = () => {},
   } = $props();
@@ -120,6 +121,7 @@
   const LOOKAHEAD_MS = 25 * 60_000;
   const STATION_HOLD_MS = 15_000;   // dwell at the station after arriving
   const OUTBOUND_MS = 90_000;       // depart past the station, then fade out
+  const IMMINENT_MS = 120_000;      // arriving within 2 min → gentle pulse
   const DOT_SMOOTHING_MS = 450;
 
   // Train car geometry (local frame, +x = direction of travel)
@@ -132,6 +134,11 @@
   let liveDots = $state([]);
   /** @type {Map<string, Omit<TrainDot, 'id'>>} */
   const dotPositions = new Map();
+
+  // Arrival flash: pulse a station anchor when a train we watched inbound reaches it.
+  const seenInbound = new Set();
+  const arrivedIds = new Set();
+  let stationFlash = $state({ Hewes: 0, Broadway: 0 });
   const gDots = $derived(liveDots.filter(dot => dot.color === '#6CBE45'));
   const jmDots = $derived(liveDots.filter(dot => dot.color !== '#6CBE45'));
 
@@ -168,8 +175,19 @@
         const opacity = passed
           ? clamp((departMs + OUTBOUND_MS) / (0.4 * OUTBOUND_MS), 0, 1)
           : 1;
+        const imminent = remainingMs > 0 && remainingMs <= IMMINENT_MS;
+        const id = trainKey(stopId, a, index);
+
+        // Flash the station the first time a train we watched approach reaches it.
+        const station = /** @type {'Hewes' | 'Broadway'} */ (stopId[0] === 'G' ? 'Broadway' : 'Hewes');
+        if (remainingMs > 0) seenInbound.add(id);
+        else if (seenInbound.has(id) && !arrivedIds.has(id)) {
+          arrivedIds.add(id);
+          stationFlash[station] = nowMs;
+        }
+
         const pos = lerp(stationPt, terminusPt, progress);
-        dots.push({ id: trainKey(stopId, a, index), x: pos.x, y: pos.y, color, angle, passed, opacity });
+        dots.push({ id, x: pos.x, y: pos.y, color, angle, passed, opacity, imminent });
         index++;
       }
     }
@@ -190,6 +208,9 @@
     for (const id of dotPositions.keys()) {
       if (!activeIds.has(id)) dotPositions.delete(id);
     }
+    // Drop arrival-tracking ids for trains that have left the board.
+    for (const id of seenInbound) if (!activeIds.has(id)) seenInbound.delete(id);
+    for (const id of arrivedIds) if (!activeIds.has(id)) arrivedIds.delete(id);
 
     for (const target of targets) {
       const current = dotPositions.get(target.id);
@@ -204,6 +225,7 @@
       current.angle = target.angle;
       current.passed = target.passed;
       current.opacity = target.opacity;
+      current.imminent = target.imminent;
     }
 
     liveDots = Array.from(dotPositions, ([id, dot]) => ({ id, ...dot }));
@@ -232,6 +254,10 @@
     <rect class="active-car-halo"
       x={-CAR_LEN / 2 - 2} y={LANE - CAR_W / 2 - 2}
       width={CAR_LEN + 4} height={CAR_W + 4} rx={CAR_RX + 2}/>
+  {:else if dot.imminent}
+    <rect class="imminent-car-halo"
+      x={-CAR_LEN / 2 - 2} y={LANE - CAR_W / 2 - 2}
+      width={CAR_LEN + 4} height={CAR_W + 4} rx={CAR_RX + 2}/>
   {/if}
   <rect class="train-car"
     x={-CAR_LEN / 2} y={LANE - CAR_W / 2}
@@ -242,7 +268,7 @@
     width={3} height={7} rx={1.5}/>
 {/snippet}
 
-<div class="map-wrap">
+<div class="map-wrap" class:night>
   <svg viewBox="0 0 {W} {H}" role="img" aria-label="Neighborhood schematic map — Hewes St and Broadway stations">
     <defs>
       <filter id="dot-glow">
@@ -278,7 +304,7 @@
     {/each}
 
     <!-- G ribbon (draw first so J/M cross on top) -->
-    <polyline points={pts([G_N, BWAY, G_S])}
+    <polyline points={pts([G_N, BWAY, G_S])} class="ribbon" style="color:#6CBE45"
       fill="none" stroke="#6CBE45" stroke-width="14"
       stroke-linecap="round" stroke-linejoin="round"/>
 
@@ -308,12 +334,12 @@
     {/each}
 
     <!-- J ribbon -->
-    <polyline points={pts([J_SW, J_H, J_NE])}
+    <polyline points={pts([J_SW, J_H, J_NE])} class="ribbon" style="color:#996633"
       fill="none" stroke="#996633" stroke-width="14"
       stroke-linecap="round" stroke-linejoin="round"/>
 
     <!-- M ribbon -->
-    <polyline points={pts([M_SW, M_H, M_NE])}
+    <polyline points={pts([M_SW, M_H, M_NE])} class="ribbon" style="color:#FF6319"
       fill="none" stroke="#FF6319" stroke-width="14"
       stroke-linecap="round" stroke-linejoin="round"/>
 
@@ -349,6 +375,18 @@
         {@render trainCar(dot)}
       </g>
     {/each}
+
+    <!-- Arrival flashes — expanding ring when a train reaches its platform -->
+    {#if stationFlash.Broadway}
+      {#key stationFlash.Broadway}
+        <circle class="arrival-flash" cx={BWAY.x} cy={BWAY.y} r="9"/>
+      {/key}
+    {/if}
+    {#if stationFlash.Hewes}
+      {#key stationFlash.Hewes}
+        <circle class="arrival-flash" cx={HEWES_MID.x} cy={HEWES_MID.y} r="11"/>
+      {/key}
+    {/if}
 
     <!-- Hewes St station pill (spans both J and M ribbons) -->
     <rect
@@ -439,6 +477,40 @@
     0%, 100% { opacity: 0.35; }
     50% { opacity: 1; }
   }
+  /* Gentler, slower pulse for a train arriving within ~2 min (not hover). */
+  .imminent-car-halo {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.6);
+    stroke-width: 1.5;
+    pointer-events: none;
+    animation: imminent-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes imminent-pulse {
+    0%, 100% { opacity: 0.15; }
+    50% { opacity: 0.55; }
+  }
+  /* At night the line ribbons glow in their own colour so the map stays vivid while dimmed. */
+  .ribbon {
+    transition: filter 1.5s ease;
+  }
+  .map-wrap.night .ribbon {
+    filter: drop-shadow(0 0 2.5px currentColor);
+  }
+
+  .arrival-flash {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.9);
+    stroke-width: 2;
+    pointer-events: none;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: arrival-flash 900ms ease-out 1 forwards;
+  }
+  @keyframes arrival-flash {
+    0%   { opacity: 0.9; transform: scale(1); }
+    100% { opacity: 0; transform: scale(2.8); }
+  }
+
   .direction-label {
     font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
     font-size: 9px;

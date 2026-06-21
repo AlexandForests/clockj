@@ -12,9 +12,11 @@ function toNumber(raw) {
 }
 
 /**
- * Fetch + decode one GTFS-RT feed. Returns [] on any error.
+ * Fetch + decode one GTFS-RT feed. `ok` is false on any fetch/decode error so the
+ * UI can tell "feed unavailable" apart from "genuinely no trains".
  * @param {string} feedKey
  * @param {string} url
+ * @returns {Promise<{ok: boolean, entities: any[]}>}
  */
 async function fetchFeed(feedKey, url) {
   let buf;
@@ -24,14 +26,14 @@ async function fetchFeed(feedKey, url) {
     buf = new Uint8Array(await res.arrayBuffer());
   } catch (e) {
     console.error(`[clockj] fetch ${feedKey} failed:`, e);
-    return [];
+    return { ok: false, entities: [] };
   }
   try {
     const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(buf);
-    return feed.entity ?? [];
+    return { ok: true, entities: feed.entity ?? [] };
   } catch (e) {
     console.error(`[clockj] decode ${feedKey} failed:`, e);
-    return [];
+    return { ok: false, entities: [] };
   }
 }
 
@@ -40,7 +42,7 @@ export async function GET() {
   const now = Math.floor(Date.now() / 1000);
 
   // Fetch all 3 feeds in parallel
-  const [jzEntities, bdfmEntities, gEntities] = await Promise.all([
+  const [jz, bdfm, g] = await Promise.all([
     fetchFeed('JZ',   FEED_URLS.JZ),
     fetchFeed('BDFM', FEED_URLS.BDFM),
     fetchFeed('G',    FEED_URLS.G),
@@ -90,18 +92,21 @@ export async function GET() {
     }
   }
 
-  processEntities(jzEntities,   FEED_LINES.JZ);
-  processEntities(bdfmEntities, FEED_LINES.BDFM);
-  processEntities(gEntities,    FEED_LINES.G);
+  processEntities(jz.entities,   FEED_LINES.JZ);
+  processEntities(bdfm.entities, FEED_LINES.BDFM);
+  processEntities(g.entities,    FEED_LINES.G);
 
   // Sort each platform's arrivals soonest-first
   for (const stopId of Object.keys(result)) {
     result[stopId].sort((a, b) => a.minutes - b.minutes);
   }
 
-  return json(result, {
-    headers: {
-      'Cache-Control': 's-maxage=15, stale-while-revalidate=30',
-    },
-  });
+  return json(
+    { platforms: result, meta: { feeds: { JZ: jz.ok, BDFM: bdfm.ok, G: g.ok } } },
+    {
+      headers: {
+        'Cache-Control': 's-maxage=15, stale-while-revalidate=30',
+      },
+    }
+  );
 }
