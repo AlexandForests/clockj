@@ -33,7 +33,7 @@
   const hasData   = $derived(freshnessAt > 0);
   const staleSecs = $derived(tick >= 0 ? Math.round((Date.now() - freshnessAt) / 1000) : 0);
 
-  // Overnight dim (00:30–05:30 America/New_York) — cuts glare + burn-in on the kiosk.
+  // Overnight dim (01:00–05:00 America/New_York) — cuts glare + burn-in on the kiosk.
   const nightDim = $derived.by(() => {
     void tick; // re-evaluate on the 1s tick
     const parts = new Intl.DateTimeFormat('en-US', {
@@ -42,7 +42,7 @@
     const h = (+(parts.find(p => p.type === 'hour')?.value ?? 0)) % 24;
     const m = +(parts.find(p => p.type === 'minute')?.value ?? 0);
     const mins = h * 60 + m;
-    return mins >= 30 && mins < 330;
+    return mins >= 60 && mins < 300;
   });
 
   /** @param {string | null} id */
