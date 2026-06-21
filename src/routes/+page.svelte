@@ -121,8 +121,10 @@
 
     const shiftTick = setInterval(() => {
       const t = Date.now() / 1000;
-      shiftX = Math.round(Math.sin(t / 17) * 4);
-      shiftY = Math.round(Math.cos(t / 23) * 4);
+      // Very long periods keep the anti-burn-in drift well below the threshold of
+      // perceived motion (~0.03 px/s) while still covering ±4px over ~12 min.
+      shiftX = Math.round(Math.sin(t / 120) * 4);
+      shiftY = Math.round(Math.cos(t / 150) * 4);
     }, 5_000);
 
     /** @type {WakeLockSentinel | null} */
@@ -232,8 +234,9 @@
     background: var(--bg);
     color: var(--text-primary);
     overflow: hidden;
-    /* pixel-shift is applied via inline transform */
-    transition: filter 1.5s ease;
+    /* pixel-shift is applied via inline transform; the long transform transition
+       turns the periodic shift into an imperceptible glide instead of a jump */
+    transition: filter 1.5s ease, transform 4.5s ease-in-out;
   }
   .shell.night {
     filter: brightness(0.5);
