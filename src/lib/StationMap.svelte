@@ -92,7 +92,7 @@
     { text: '< MANHATTAN-BOUND', x: 40, y: 122, rotate: 48 },
     { text: 'OUTBOUND >', x: 420, y: 555, rotate: 48 },
     { text: 'COURT SQ', x: 184, y: 112, rotate: -90 },
-    { text: 'CHURCH AV', x: 184, y: 520, rotate: 90 },
+    { text: 'CHURCH AV', x: 182.2, y: 520, rotate: 90 },
   ];
 
   /** @param {Point[]} arr */
